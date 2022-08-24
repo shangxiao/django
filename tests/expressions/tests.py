@@ -10,6 +10,7 @@ from unittest import mock
 from django.core.exceptions import FieldError
 from django.db import DatabaseError, NotSupportedError, connection
 from django.db.models import (
+    All,
     AutoField,
     Avg,
     BinaryField,
@@ -2244,6 +2245,28 @@ class ExistsTests(TestCase):
         ).filter(pk=manager.pk)
         self.assertSequenceEqual(qs, [manager])
         self.assertIs(qs.get().not_exists, True)
+
+
+@unittest.skipIf(connection.vendor == "sqlite", "Unsupported")
+class AllTests(TestCase):
+    def test_all(self):
+        keith = Manager.objects.create(name="Keith")
+        Employee.objects.create(firstname="Alice", salary=50, manager=keith)
+        Employee.objects.create(firstname="Bob", salary=100, manager=keith)
+        barbara = Manager.objects.create(name="Barbara")
+        Employee.objects.create(firstname="John", salary=20, manager=barbara)
+        Employee.objects.create(firstname="Jill", salary=100, manager=barbara)
+
+        managers_with_only_high_paid_employees = Manager.objects.filter(
+            All(
+                Employee.objects.annotate(ge_50=Q(salary__gte=50))
+                .filter(manager=OuterRef("pk"))
+                .values("ge_50")
+            )
+        )
+
+        self.assertEqual(len(managers_with_only_high_paid_employees), 1)
+        self.assertEqual(managers_with_only_high_paid_employees[0], keith)
 
 
 class FieldTransformTests(TestCase):

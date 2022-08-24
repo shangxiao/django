@@ -1488,8 +1488,7 @@ class Subquery(BaseExpression, Combinable):
         return self.query.get_group_by_cols()
 
 
-class Exists(Subquery):
-    template = "EXISTS(%(subquery)s)"
+class BooleanSubquery(Subquery):
     output_field = fields.BooleanField()
 
     def __init__(self, queryset, negated=False, **kwargs):
@@ -1501,8 +1500,7 @@ class Exists(Subquery):
         clone.negated = not self.negated
         return clone
 
-    def as_sql(self, compiler, connection, template=None, **extra_context):
-        query = self.query.exists(using=connection.alias)
+    def as_sql(self, compiler, connection, template=None, query=None, **extra_context):
         try:
             sql, params = super().as_sql(
                 compiler,
@@ -1529,6 +1527,23 @@ class Exists(Subquery):
         if not compiler.connection.features.supports_boolean_expr_in_select_clause:
             sql = "CASE WHEN {} THEN 1 ELSE 0 END".format(sql)
         return sql, params
+
+
+class Exists(BooleanSubquery):
+    template = "EXISTS(%(subquery)s)"
+
+    def as_sql(self, compiler, connection, template=None, **extra_context):
+        return super().as_sql(
+            compiler,
+            connection,
+            template=template,
+            query=self.query.exists(using=connection.alias),
+            **extra_context,
+        )
+
+
+class All(BooleanSubquery):
+    template = "'t' = ALL (%(subquery)s)"
 
 
 @deconstructible(path="django.db.models.OrderBy")

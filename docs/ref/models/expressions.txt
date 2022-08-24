@@ -650,6 +650,31 @@ degrade performance, it's automatically removed.
 
 You can query using ``NOT EXISTS`` with ``~Exists()``.
 
+``All()`` subqueries
+~~~~~~~~~~~~~~~~~~~~
+
+.. class:: All(queryset)
+
+``All`` is a ``Subquery`` subclass that uses the ``ALL`` subquery expression to
+determine if all of the results of the subquery evaluate to true. The queryset
+must contain a single value that evalues to a boolean.
+
+For example, to show posts that only have comments within the last day:
+
+    >>> from django.db.models import All, OuterRef, Q
+    >>> from datetime import timedelta
+    >>> from django.utils import timezone
+    >>> one_day_ago = timezone.now() - timedelta(days=1)
+    >>> Post.objects.filter(
+    ...     All(
+    ...         Comment.objects.annotate(
+    ...             one_day_ago=Q(created_at__gte=one_day_ago)
+    ...         ).filter(
+    ...             post=OuterRef('pk'),
+    ...         ).values('one_day_ago')
+    ...     )
+    ... )
+
 Filtering on a ``Subquery()`` or ``Exists()`` expressions
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
