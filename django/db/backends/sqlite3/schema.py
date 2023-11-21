@@ -7,6 +7,7 @@ from django.db.backends.base.schema import BaseDatabaseSchemaEditor
 from django.db.backends.ddl_references import Statement
 from django.db.backends.utils import strip_quotes
 from django.db.models import NOT_PROVIDED, UniqueConstraint
+from django.db.models.fields.generated import GeneratedField
 
 
 class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
@@ -107,6 +108,7 @@ class DatabaseSchemaEditor(BaseDatabaseSchemaEditor):
         mapping = {
             f.column: self.quote_name(f.column)
             for f in model._meta.local_concrete_fields
+            if not isinstance(f, GeneratedField)
         }
         # This maps field names (not columns) for things like unique_together
         rename_mapping = {}
