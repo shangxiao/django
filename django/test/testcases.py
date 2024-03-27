@@ -1164,8 +1164,8 @@ class TransactionTestCase(SimpleTestCase):
             if sql_list:
                 with transaction.atomic(using=db_name):
                     with conn.cursor() as cursor:
-                        for sql in sql_list:
-                            cursor.execute(sql)
+                        # statements already have ";"
+                        cursor.execute("".join(sql_list))
 
     def _fixture_setup(self):
         for db_name in self._databases_names(include_mirrors=False):
