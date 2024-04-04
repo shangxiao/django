@@ -45,17 +45,23 @@ from .settings import AUTH_TEMPLATES
 class TestDataMixin:
     @classmethod
     def setUpTestData(cls):
-        cls.u1 = User.objects.create_user(
+        cls.testclient_user = User.objects.create_user(
             username="testclient", password="password", email="testclient@example.com"
         )
-        cls.u2 = User.objects.create_user(
+        cls.inactive_user = User.objects.create_user(
             username="inactive", password="password", is_active=False
         )
-        cls.u3 = User.objects.create_user(username="staff", password="password")
-        cls.u4 = User.objects.create(username="empty_password", password="")
-        cls.u5 = User.objects.create(username="unmanageable_password", password="$")
-        cls.u6 = User.objects.create(username="unknown_password", password="foo$bar")
-        cls.u7 = User.objects.create(
+        cls.staff_user = User.objects.create_user(username="staff", password="password")
+        cls.empty_password_user = User.objects.create(
+            username="empty_password", password=""
+        )
+        cls.unmanageable_password_user = User.objects.create(
+            username="unmanageable_password", password="$"
+        )
+        cls.unknown_password_user = User.objects.create(
+            username="unknown_password", password="foo$bar"
+        )
+        cls.unusable_password_user = User.objects.create(
             username="unusable_password", password=make_password(None)
         )
 
@@ -762,12 +768,11 @@ class SetPasswordFormTest(TestDataMixin, TestCase):
         ]
     )
     def test_validates_password(self):
-        user = User.objects.get(username="testclient")
         data = {
             "new_password1": "testclient",
             "new_password2": "testclient",
         }
-        form = SetPasswordForm(user, data)
+        form = SetPasswordForm(self.testclient_user, data)
         self.assertFalse(form.is_valid())
         self.assertEqual(len(form["new_password2"].errors), 2)
         self.assertIn(
@@ -784,7 +789,7 @@ class SetPasswordFormTest(TestDataMixin, TestCase):
             "new_password2": "testclient",
             "usable_password": "false",
         }
-        form = SetPasswordForm(user, data)
+        form = SetPasswordForm(self.testclient_user, data)
         self.assertFalse(form.is_valid())
         self.assertEqual(len(form["new_password2"].errors), 2)
         self.assertIn(
@@ -796,14 +801,13 @@ class SetPasswordFormTest(TestDataMixin, TestCase):
         )
 
     def test_no_password(self):
-        user = User.objects.get(username="testclient")
         data = {"new_password1": "new-password"}
-        form = SetPasswordForm(user, data)
+        form = SetPasswordForm(self.testclient_user, data)
         self.assertIs(form.is_valid(), False)
         self.assertEqual(
             form["new_password2"].errors, [Field.default_error_messages["required"]]
         )
-        form = SetPasswordForm(user, {})
+        form = SetPasswordForm(self.testclient_user, {})
         self.assertIs(form.is_valid(), False)
         self.assertEqual(
             form["new_password1"].errors, [Field.default_error_messages["required"]]
@@ -813,12 +817,11 @@ class SetPasswordFormTest(TestDataMixin, TestCase):
         )
 
     def test_password_whitespace_not_stripped(self):
-        user = User.objects.get(username="testclient")
         data = {
             "new_password1": "   password   ",
             "new_password2": "   password   ",
         }
-        form = SetPasswordForm(user, data)
+        form = SetPasswordForm(self.testclient_user, data)
         self.assertTrue(form.is_valid())
         self.assertEqual(form.cleaned_data["new_password1"], data["new_password1"])
         self.assertEqual(form.cleaned_data["new_password2"], data["new_password2"])
@@ -847,14 +850,14 @@ class SetPasswordFormTest(TestDataMixin, TestCase):
             "personnelles.",
             "Votre mot de passe doit contenir au minimum 12 caractères.",
         ]
-        form = SetPasswordForm(self.u1)
+        form = SetPasswordForm(self.testclient_user)
         with translation.override("fr"):
             html = form.as_p()
             for french_text in french_help_texts:
                 self.assertIn(french_text, html)
 
     def test_html_autocomplete_attributes(self):
-        form = SetPasswordForm(self.u1)
+        form = SetPasswordForm(self.testclient_user)
         tests = (
             ("new_password1", "new-password"),
             ("new_password2", "new-password"),
@@ -868,13 +871,12 @@ class SetPasswordFormTest(TestDataMixin, TestCase):
 
 class PasswordChangeFormTest(TestDataMixin, TestCase):
     def test_incorrect_password(self):
-        user = User.objects.get(username="testclient")
         data = {
             "old_password": "test",
             "new_password1": "abc123",
             "new_password2": "abc123",
         }
-        form = PasswordChangeForm(user, data)
+        form = PasswordChangeForm(self.testclient_user, data)
         self.assertFalse(form.is_valid())
         self.assertEqual(
             form["old_password"].errors,
@@ -883,13 +885,12 @@ class PasswordChangeFormTest(TestDataMixin, TestCase):
 
     def test_password_verification(self):
         # The two new passwords do not match.
-        user = User.objects.get(username="testclient")
         data = {
             "old_password": "password",
             "new_password1": "abc123",
             "new_password2": "abc",
         }
-        form = PasswordChangeForm(user, data)
+        form = PasswordChangeForm(self.testclient_user, data)
         self.assertFalse(form.is_valid())
         self.assertEqual(
             form["new_password2"].errors,
@@ -899,13 +900,12 @@ class PasswordChangeFormTest(TestDataMixin, TestCase):
     @mock.patch("django.contrib.auth.password_validation.password_changed")
     def test_success(self, password_changed):
         # The success case.
-        user = User.objects.get(username="testclient")
         data = {
             "old_password": "password",
             "new_password1": "abc123",
             "new_password2": "abc123",
         }
-        form = PasswordChangeForm(user, data)
+        form = PasswordChangeForm(self.testclient_user, data)
         self.assertTrue(form.is_valid())
         form.save(commit=False)
         self.assertEqual(password_changed.call_count, 0)
@@ -914,9 +914,8 @@ class PasswordChangeFormTest(TestDataMixin, TestCase):
 
     def test_field_order(self):
         # Regression test - check the order of fields:
-        user = User.objects.get(username="testclient")
         self.assertEqual(
-            list(PasswordChangeForm(user, {}).fields),
+            list(PasswordChangeForm(self.testclient_user, {}).fields),
             ["old_password", "new_password1", "new_password2"],
         )
 
@@ -935,8 +934,7 @@ class PasswordChangeFormTest(TestDataMixin, TestCase):
         self.assertEqual(form.cleaned_data["new_password2"], data["new_password2"])
 
     def test_html_autocomplete_attributes(self):
-        user = User.objects.get(username="testclient")
-        form = PasswordChangeForm(user)
+        form = PasswordChangeForm(self.testclient_user)
         self.assertEqual(
             form.fields["old_password"].widget.attrs["autocomplete"], "current-password"
         )
@@ -944,9 +942,8 @@ class PasswordChangeFormTest(TestDataMixin, TestCase):
 
 class UserChangeFormTest(TestDataMixin, TestCase):
     def test_username_validity(self):
-        user = User.objects.get(username="testclient")
         data = {"username": "not valid"}
-        form = UserChangeForm(data, instance=user)
+        form = UserChangeForm(data, instance=self.testclient_user)
         self.assertFalse(form.is_valid())
         validator = next(
             v
@@ -973,25 +970,21 @@ class UserChangeFormTest(TestDataMixin, TestCase):
         MyUserForm({})
 
     def test_unusable_password(self):
-        user = User.objects.get(username="unusable_password")
-        form = UserChangeForm(instance=user)
+        form = UserChangeForm(instance=self.unusable_password_user)
         self.assertIn(_("No password set."), form.as_table())
 
     def test_bug_17944_empty_password(self):
-        user = User.objects.get(username="empty_password")
-        form = UserChangeForm(instance=user)
+        form = UserChangeForm(instance=self.empty_password_user)
         self.assertIn(_("No password set."), form.as_table())
 
     def test_bug_17944_unmanageable_password(self):
-        user = User.objects.get(username="unmanageable_password")
-        form = UserChangeForm(instance=user)
+        form = UserChangeForm(instance=self.unmanageable_password_user)
         self.assertIn(
             _("Invalid password format or unknown hashing algorithm."), form.as_table()
         )
 
     def test_bug_17944_unknown_password_algorithm(self):
-        user = User.objects.get(username="unknown_password")
-        form = UserChangeForm(instance=user)
+        form = UserChangeForm(instance=self.unknown_password_user)
         self.assertIn(
             _("Invalid password format or unknown hashing algorithm."), form.as_table()
         )
@@ -999,8 +992,7 @@ class UserChangeFormTest(TestDataMixin, TestCase):
     def test_bug_19133(self):
         "The change form does not return the password value"
         # Use the form to construct the POST data
-        user = User.objects.get(username="testclient")
-        form_for_data = UserChangeForm(instance=user)
+        form_for_data = UserChangeForm(instance=self.testclient_user)
         post_data = form_for_data.initial
 
         # The password field should be readonly, so anything
@@ -1008,15 +1000,14 @@ class UserChangeFormTest(TestDataMixin, TestCase):
         # valid, and give back the 'initial' value for the
         # password field.
         post_data["password"] = "new password"
-        form = UserChangeForm(instance=user, data=post_data)
+        form = UserChangeForm(instance=self.testclient_user, data=post_data)
 
         self.assertTrue(form.is_valid())
         # original hashed password contains $
         self.assertIn("$", form.cleaned_data["password"])
 
     def test_bug_19349_bound_password_field(self):
-        user = User.objects.get(username="testclient")
-        form = UserChangeForm(data={}, instance=user)
+        form = UserChangeForm(data={}, instance=self.testclient_user)
         # When rendering the bound password field,
         # ReadOnlyPasswordHashWidget needs the initial
         # value to render correctly
@@ -1026,18 +1017,18 @@ class UserChangeFormTest(TestDataMixin, TestCase):
     def test_link_to_password_reset_in_helptext_via_to_field(self):
         cases = [
             (
-                "testclient",
+                "testclient_user",
                 'you can change or unset the password using <a href="(.*?)">',
             ),
             (
-                "unusable_password",
+                "unusable_password_user",
                 "Enable password-based authentication for this user by setting "
                 'a password using <a href="(.*?)">this form</a>.',
             ),
         ]
         for username, expected_help_text in cases:
             with self.subTest(username=username):
-                user = User.objects.get(username=username)
+                user = getattr(self, username)
                 form = UserChangeForm(data={}, instance=user)
                 password_help_text = form.fields["password"].help_text
                 matches = re.search(expected_help_text, password_help_text)
@@ -1062,13 +1053,12 @@ class UserChangeFormTest(TestDataMixin, TestCase):
                     "date_of_birth",
                 )
 
-        user = User.objects.get(username="testclient")
         data = {
             "username": "testclient",
             "password": "testclient",
             "date_of_birth": "1998-02-24",
         }
-        form = CustomUserChangeForm(data, instance=user)
+        form = CustomUserChangeForm(data, instance=self.testclient_user)
         self.assertTrue(form.is_valid())
         form.save()
         self.assertEqual(form.cleaned_data["username"], "testclient")
