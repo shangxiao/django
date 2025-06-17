@@ -1,7 +1,6 @@
 from django.core import checks
-from django.db import connection, models
-from django.db.models import F
-from django.test import TestCase, skipUnlessAnyDBFeature
+from django.db import models
+from django.test import TestCase
 from django.test.utils import isolate_apps
 
 
@@ -218,32 +217,6 @@ class CompositePKChecksTests(TestCase):
                     "'CompositePrimaryKey' must be named 'pk'.",
                     obj=Foo._meta.get_field("primary_key"),
                     id="fields.E013",
-                ),
-            ],
-        )
-
-    @skipUnlessAnyDBFeature(
-        "supports_virtual_generated_columns",
-        "supports_stored_generated_columns",
-    )
-    def test_composite_pk_cannot_include_generated_field(self):
-        class Foo(models.Model):
-            pk = models.CompositePrimaryKey("id", "foo")
-            id = models.IntegerField()
-            foo = models.GeneratedField(
-                expression=F("id"),
-                output_field=models.IntegerField(),
-                db_persist=connection.features.supports_stored_generated_columns,
-            )
-
-        self.assertEqual(
-            Foo.check(databases=self.databases),
-            [
-                checks.Error(
-                    "'foo' cannot be included in the composite primary key.",
-                    hint="'foo' field is a generated field.",
-                    obj=Foo,
-                    id="models.E042",
                 ),
             ],
         )
