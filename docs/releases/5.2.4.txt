@@ -16,3 +16,6 @@ Bugfixes
 * Fixed a regression in Django 5.2.3 where ``Value(None, JSONField())`` used in
   a :class:`~django.db.models.expressions.When` condition was incorrectly
   serialized as SQL ``NULL`` instead of JSON ``null`` (:ticket:`36453`).
+
+* Updated :class:`~django.db.models.CompositePrimaryKey` check E042 to now
+  allow including :class:`~django.db.models.GeneratedField`.
