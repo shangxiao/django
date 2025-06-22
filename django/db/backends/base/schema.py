@@ -217,6 +217,18 @@ class BaseDatabaseSchemaEditor:
         column_sqls = []
         params = []
         for field in model._meta.local_fields:
+            if field.remote_field and field.db_constraint and len(field.to_fields) > 1:
+                if (
+                    self.sql_create_fk
+                    and self.connection.features.supports_foreign_keys
+                ):
+                    self.deferred_sql.append(
+                        self._create_fk_sql(
+                            model, field, "_fk_%(to_table)s_%(to_column)s"
+                        )
+                    )
+                continue
+
             # SQL.
             definition, extra_params = self.column_sql(model, field)
             if definition is None:
@@ -232,17 +244,6 @@ class BaseDatabaseSchemaEditor:
             params.extend(extra_params)
             # FK.
             if field.remote_field and field.db_constraint:
-                if len(field.to_fields) > 1:
-                    if (
-                        self.sql_create_fk
-                        and self.connection.features.supports_foreign_keys
-                    ):
-                        self.deferred_sql.append(
-                            self._create_fk_sql(
-                                model, field, "_fk_%(to_table)s_%(to_column)s"
-                            )
-                        )
-                    continue
                 to_table = field.remote_field.model._meta.db_table
                 to_column = field.remote_field.model._meta.get_field(
                     field.remote_field.field_name

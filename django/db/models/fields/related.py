@@ -1117,6 +1117,12 @@ class ForeignKey(ForeignObject):
 
     @property
     def target_field(self):
+        # xxx need soemthing better
+        if len(self.foreign_related_fields) > 1 and set(
+            self.foreign_related_fields[0].model._meta.pk_fields
+        ) == set(self.foreign_related_fields):
+            return self.foreign_related_fields[0].model._meta.pk
+
         return self.foreign_related_fields[0]
 
     def validate(self, value, model_instance):
