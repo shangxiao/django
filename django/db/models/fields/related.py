@@ -759,7 +759,25 @@ class ForeignObject(RelatedField):
         return name, path, args, kwargs
 
     def resolve_related_fields(self):
-        if not self.from_fields or len(self.from_fields) != len(self.to_fields):
+        resolved_from_fields = [
+            (
+                self
+                if from_field_name == RECURSIVE_RELATIONSHIP_CONSTANT
+                else self.opts.get_field(from_field_name)
+            )
+            for from_field_name in self.from_fields
+        ]
+        resolved_to_fields = []
+        for to_field_name in self.to_fields:
+            if to_field_name is None or to_field_name == "pk":
+                resolved_to_fields += self.remote_field.model._meta.pk_fields
+            else:
+                resolved_to_fields.append(
+                    self.remote_field.model._meta.get_field(to_field_name)
+                )
+        if not resolved_from_fields or len(resolved_from_fields) != len(
+            resolved_to_fields
+        ):
             raise ValueError(
                 "Foreign Object from and to fields must be the same non-zero length"
             )
@@ -767,20 +785,7 @@ class ForeignObject(RelatedField):
             raise ValueError(
                 "Related model %r cannot be resolved" % self.remote_field.model
             )
-        related_fields = []
-        for from_field_name, to_field_name in zip(self.from_fields, self.to_fields):
-            from_field = (
-                self
-                if from_field_name == RECURSIVE_RELATIONSHIP_CONSTANT
-                else self.opts.get_field(from_field_name)
-            )
-            to_field = (
-                self.remote_field.model._meta.pk
-                if to_field_name is None
-                else self.remote_field.model._meta.get_field(to_field_name)
-            )
-            related_fields.append((from_field, to_field))
-        return related_fields
+        return list(zip(resolved_from_fields, resolved_to_fields))
 
     @cached_property
     def related_fields(self):

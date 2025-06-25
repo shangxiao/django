@@ -4,7 +4,7 @@ from unittest import skipUnless
 from django.db import connection
 from django.test import TestCase
 
-from .models import Comment, Tenant, User
+from .models import Comment, Tenant, User, Contact, Order
 
 
 class CompositeFKTests(TestCase):
@@ -139,3 +139,10 @@ class CompositeFKTests(TestCase):
         self.assertEqual(self.comment_4.user_id, self.user_3.id)
         self.assertEqual(self.comment_4.tenant_id, self.tenant_2.id)
         self.assertEqual(self.comment_4.tenant, self.tenant_2)
+
+    def test_referring_to_composite_pk(self):
+        tenant = Tenant.objects.create()
+        contact = Contact.objects.create(tenant=tenant)
+        order = Order.objects.create(tenant=tenant, contact=contact)
+        self.assertEqual(order.tenant_id, tenant.pk)
+        self.assertEqual((order.contact_id, order.tenant_id), contact.pk)
