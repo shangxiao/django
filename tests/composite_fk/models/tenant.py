@@ -42,3 +42,15 @@ class Order(models.Model):
         from_fields=["contact_id", "tenant"],
         to_fields=["pk"],
     )
+
+
+class Order2(models.Model):
+    pk = models.CompositePrimaryKey("id", "tenant")
+    id = models.BigAutoField()
+    tenant = models.ForeignKey(Tenant, on_delete=models.CASCADE)
+    contact = models.ForeignKey(
+        Contact,
+        on_delete=models.CASCADE,
+        null=True,
+        include=["tenant"],
+    )

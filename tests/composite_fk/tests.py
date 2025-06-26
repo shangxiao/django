@@ -1,10 +1,10 @@
 import re
 from unittest import skipUnless
 
-from django.db import connection
+from django.db import connection, models
 from django.test import TestCase
 
-from .models import Comment, Tenant, User, Contact, Order
+from .models import Comment, Tenant, User, Contact, Order, Order2
 
 
 class CompositeFKTests(TestCase):
@@ -140,9 +140,85 @@ class CompositeFKTests(TestCase):
         self.assertEqual(self.comment_4.tenant_id, self.tenant_2.id)
         self.assertEqual(self.comment_4.tenant, self.tenant_2)
 
+    def test_fk_attrs_when_pointing_to_composite_pk(self):
+        class Parent(models.Model):
+            pk = models.CompositePrimaryKey("id", "tenant")
+            id = models.AutoField()
+            tenant = models.CharField(max_length=100)
+
+        class Child(models.Model):
+            parent_id = models.IntegerField()
+            tenant = models.CharField(max_length=100)
+            parent = models.ForeignKey(
+                Parent, on_delete=models.DO_NOTHING, from_fields=["parent_id", "tenant"]
+            )
+
+        fk = Child._meta.get_field("parent")
+        self.assertEqual(fk.get_attname(), "parent")
+        self.assertEqual(fk.get_attname_column(), ("parent", None))
+        self.assertFalse(fk.concrete)
+        self.assertEqual(fk.target_field, Parent._meta.pk)  # ?
+        self.assertEqual(
+            fk.foreign_related_fields,
+            (Parent._meta.get_field("id"), Parent._meta.get_field("tenant")),
+        )
+        self.assertEqual(
+            fk.local_related_fields,
+            (Child._meta.get_field("parent_id"), Child._meta.get_field("tenant")),
+        )
+        self.assertEqual(fk.to_python((1, 2)), (1, 2))
+        # self.assertEqual(fk.db_type(connection), "asdf")
+
+    def test_fk_attrs_when_using_include(self):
+        class Parent(models.Model):
+            pk = models.CompositePrimaryKey("id", "tenant")
+            id = models.AutoField()
+            tenant = models.CharField(max_length=100)
+
+            class Meta:
+                managed = False
+
+        class Child(models.Model):
+            tenant = models.CharField(max_length=100)
+            parent = models.ForeignKey(
+                Parent, on_delete=models.DO_NOTHING, include=["tenant"]
+            )
+
+            class Meta:
+                managed = False
+
+        fk = Child._meta.get_field("parent")
+        self.assertEqual(fk.get_attname(), "parent_id")
+        self.assertEqual(fk.get_attname_column(), ("parent_id", "parent_id"))
+        self.assertTrue(fk.concrete)
+        self.assertEqual(fk.target_field, Parent._meta.pk)  # ?
+        self.assertEqual(
+            fk.foreign_related_fields,
+            (Parent._meta.get_field("id"), Parent._meta.get_field("tenant")),
+        )
+        self.assertEqual(
+            fk.local_related_fields,
+            (Child._meta.get_field("parent_id"), Child._meta.get_field("tenant")),
+        )
+        self.assertEqual(fk.to_python((1, 2)), (1, 2))
+        self.assertEqual(fk.db_type(connection), "integer")
+        self.assertEqual(fk.cast_db_type(connection), "integer")
+        self.assertEqual(
+            fk.db_parameters(connection),
+            {"type": "integer", "check": None, "collation": None},
+        )
+
     def test_referring_to_composite_pk(self):
         tenant = Tenant.objects.create()
         contact = Contact.objects.create(tenant=tenant)
         order = Order.objects.create(tenant=tenant, contact=contact)
+        self.assertEqual(order.tenant_id, tenant.pk)
+        self.assertEqual((order.contact_id, order.tenant_id), contact.pk)
+
+    def test_using_include(self):
+        tenant = Tenant.objects.create()
+        contact = Contact.objects.create(tenant=tenant)
+        order = Order2.objects.create(tenant=tenant, contact=contact)
+
         self.assertEqual(order.tenant_id, tenant.pk)
         self.assertEqual((order.contact_id, order.tenant_id), contact.pk)

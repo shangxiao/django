@@ -608,12 +608,9 @@ class ForeignObject(RelatedField):
     def _check_from_fields_exist(self):
         errors = []
 
-        if not self.from_fields or self.from_fields == [
-            RECURSIVE_RELATIONSHIP_CONSTANT
-        ]:
-            return errors
+        from_fields = set(self.from_fields) - {RECURSIVE_RELATIONSHIP_CONSTANT}
 
-        for from_field in self.from_fields:
+        for from_field in from_fields:
             try:
                 self.model._meta.get_field(from_field)
             except exceptions.FieldDoesNotExist:
@@ -989,10 +986,13 @@ class ForeignKey(ForeignObject):
         db_constraint=True,
         from_fields=None,
         to_fields=None,
+        include=None,
         **kwargs,
     ):
+
         if to_field is not None and to_fields is not None:
             raise ValueError("Cannot specify both 'to_field' and 'to_fields'.")
+
         try:
             to._meta.model_name
         except AttributeError:
@@ -1011,9 +1011,28 @@ class ForeignKey(ForeignObject):
             # the to_field during FK construction. It won't be guaranteed to
             # be correct until contribute_to_class is called. Refs #12190.
             to_field = to_field or (to._meta.pk and to._meta.pk.name)
+
         if not callable(on_delete):
             raise TypeError("on_delete must be callable.")
 
+        from_fields = (
+            [RECURSIVE_RELATIONSHIP_CONSTANT] if from_fields is None else from_fields
+        )
+        to_fields = [to_field] if to_fields is None else to_fields
+
+        # see above about contribute_to_class ?
+        # if getattr(to, "__name__", None) == "Contact":
+        #     breakpoint()
+        # to_fields = unnest([to._meta.get_field(f) for f in to_fields])
+
+        # XXX this needs to change: we can't just append as the order may not match the
+        # on the foreign side
+        if include is not None:
+            # to_fields = [to_field] + include
+            from_fields = from_fields + include
+        self.include = include
+
+        # update this?
         kwargs["rel"] = self.rel_class(
             self,
             to,
@@ -1032,12 +1051,8 @@ class ForeignKey(ForeignObject):
             related_name=related_name,
             related_query_name=related_query_name,
             limit_choices_to=limit_choices_to,
-            from_fields=(
-                [RECURSIVE_RELATIONSHIP_CONSTANT]
-                if from_fields is None
-                else from_fields
-            ),
-            to_fields=[to_field] if to_fields is None else to_fields,
+            from_fields=from_fields,
+            to_fields=to_fields,
             **kwargs,
         )
         self.db_constraint = db_constraint
@@ -1174,13 +1189,13 @@ class ForeignKey(ForeignObject):
         return related_fields
 
     def get_attname(self):
-        if len(self.from_fields) > 1:
+        if len(self.from_fields) > 1 and self.include is None:
             return self.name
         return "%s_id" % self.name
 
     def get_attname_column(self):
         attname = self.get_attname()
-        if len(self.from_fields) > 1:
+        if len(self.from_fields) > 1 and self.include is None:
             return attname, None
         column = self.db_column or attname
         return attname, column
@@ -1238,13 +1253,41 @@ class ForeignKey(ForeignObject):
         return None
 
     def db_type(self, connection):
+        if self.include is not None:
+            target_fields = [
+                field
+                for field in self.foreign_related_fields
+                if field.name not in self.include
+            ]
+            if len(target_fields) == 1:
+                return target_fields[0].rel_db_type(connection=connection)
         return self.target_field.rel_db_type(connection=connection)
 
     def cast_db_type(self, connection):
+        if self.include is not None:
+            target_fields = [
+                field
+                for field in self.foreign_related_fields
+                if field.name not in self.include
+            ]
+            if len(target_fields) == 1:
+                return target_fields[0].cast_db_type(connection=connection)
         return self.target_field.cast_db_type(connection=connection)
 
     def db_parameters(self, connection):
-        target_db_parameters = self.target_field.db_parameters(connection)
+        target_db_parameters = None
+        if self.include is not None:
+            target_fields = [
+                field
+                for field in self.foreign_related_fields
+                if field.name not in self.include
+            ]
+            if len(target_fields) == 1:
+                target_db_parameters = target_fields[0].db_parameters(
+                    connection=connection
+                )
+        if target_db_parameters is None:
+            target_db_parameters = self.target_field.db_parameters(connection)
         return {
             "type": self.db_type(connection),
             "check": self.db_check(connection),
